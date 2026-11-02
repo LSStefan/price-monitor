@@ -1,6 +1,56 @@
 from playwright.sync_api import sync_playwright
 from database import init_db, SessionLocal, Product, ProductListing, PriceHistory
 from scraper import scrape_product_price, get_store_info, auto_find_product_url, SEARCH_CONFIGS
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+# Incarcam variabilele din fisierul .env
+load_dotenv()
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
+RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
+
+def send_email_alert(product_name: str, price: float, store: str, url: str):
+    """Trimite o alerta profesionala prin email folosind protocolul SMTP."""
+    if not SENDER_EMAIL or "emailul_tau" in SENDER_EMAIL:
+        print("[AVERTISMENT] Datele SMTP nu sunt configurate in fisierul .env. Emailul nu s-a trimis.")
+        return
+        
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[ALERTA PRET] {product_name} a scazut la {price:.2f} RON!"
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECEIVER_EMAIL
+        
+        # Continutul emailului in format HTML curat
+        html_content = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; color: #333;">
+            <h2>Alerta de pret!</h2>
+            <p>Produsul <b>{product_name}</b> a atins pretul tinta!</p>
+            <p>Pret gasit: <b style="color: green; font-size: 18px;">{price:.2f} RON</b></p>
+            <p>Magazin: <b>{store}</b></p>
+            <p><a href="{url}" style="background-color: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px;">Vezi oferta direct pe site</a></p>
+          </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(html_content, "html"))
+        
+        # Conectarea la serverul SMTP (ex: Gmail)
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls() # Securizam conexiunea
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+            
+        print(f"[SUCCES] Alerta pe email a fost trimisa catre {RECEIVER_EMAIL}!")
+    except Exception as e:
+        print(f"[EROARE] Nu s-a putut trimite emailul: {e}")
 
 def get_browser_context(playwright_instance):
     browser = playwright_instance.chromium.launch(headless=False, slow_mo=50)
@@ -125,8 +175,10 @@ def run_comparator(db):
                     diff = second["price"] - best["price"]
                     print(f"[ECONOMIE] Economisesti {diff:.2f} RON fata de {second['store']} ({second['price']:.2f} RON)")
                 
+                # Verificam pragul de alerta si trimitem email
                 if best["price"] <= product.target_price:
                     print(f"[ALERTA] Pretul ({best['price']:.2f} RON) este SUB tinta ta de {product.target_price} RON!")
+                    send_email_alert(product.name, best["price"], best["store"], best["url"])
                 else:
                     diff_target = best["price"] - product.target_price
                     print(f"[INFO] Mai trebuie sa scada cu {diff_target:.2f} RON pana la tinta.")
@@ -172,6 +224,7 @@ def afiseaza_date(db):
             for h in l.history:
                 data_f = h.timestamp.strftime("%Y-%m-%d %H:%M:%S")
                 print(f"     * {h.price:.2f} RON ({data_f} UTC)")
+        
 
 def main_menu():
     init_db()
