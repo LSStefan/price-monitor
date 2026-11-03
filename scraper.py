@@ -52,6 +52,16 @@ def scrape_product_price(context: BrowserContext, url: str) -> float:
     finally:
         page.close()
 
+def is_valid_match(title: str, query: str) -> bool:
+    """Verifica daca TOATE cuvintele din cautare se regasesc in titlul produsului."""
+    query_words = query.lower().split()
+    title_lower = title.lower()
+    
+    for word in query_words:
+        if word not in title_lower:
+            return False
+    return True
+
 def auto_find_product_url(context: BrowserContext, store_key: str, product_name: str) -> str | None:
     config = SEARCH_CONFIGS.get(store_key)
     if not config:
@@ -62,24 +72,38 @@ def auto_find_product_url(context: BrowserContext, store_key: str, product_name:
     page = context.new_page()
     
     try:
-        # Intram pe pagina de cautare
         page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
         
-        # Daca magazinul ne-a redirectionat direct pe produs
+        # Cazul 1: Redirectionare directa (am nimerit direct pe produs)
         if page.url != search_url and "/search/" not in page.url and "/cauta/" not in page.url:
             return page.url
             
-        # Asteptam sa apara lista de rezultate
+        # Cazul 2: Lista de rezultate
         page.wait_for_selector(config["first_product_link"], timeout=10000)
         
-        # DAM CLICK pe primul rezultat
-        print(f"       [DEBUG] Accesam pagina primului produs de pe {store_key}...")
-        page.locator(config["first_product_link"]).first.click()
+        # Luam primele 5 rezultate de pe pagina
+        links = page.locator(config["first_product_link"]).all()
         
-        # Asteptam sa se incarce pagina noului produs
-        page.wait_for_load_state("domcontentloaded", timeout=15000)
-        
-        return page.url
+        best_link = None
+        for link in links[:5]:
+            title_text = link.inner_text().strip()
+            if not title_text:
+                continue
+                
+            # Verificam daca titlul contine ce am cautat
+            if is_valid_match(title_text, product_name):
+                print(f"       [DEBUG] Potrivire validata pe {store_key}: {title_text}")
+                best_link = link
+                break
+                
+        if best_link:
+            best_link.click()
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            return page.url
+        else:
+            print(f"       [INFO] Niciunul din primele 5 rezultate nu contine exact '{product_name}'.")
+            return None
+            
     except Exception as e:
         print(f"       [EROARE Cautare {store_key}]: {e}")
         return None
