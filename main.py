@@ -7,7 +7,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 
-# Incarcam variabilele din fisierul .env
 load_dotenv()
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
@@ -16,9 +15,8 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 
 def send_email_alert(product_name: str, price: float, store: str, url: str):
-    """Trimite o alerta profesionala prin email folosind protocolul SMTP."""
     if not SENDER_EMAIL or "emailul_tau" in SENDER_EMAIL:
-        print("[AVERTISMENT] Datele SMTP nu sunt configurate in fisierul .env. Emailul nu s-a trimis.")
+        print("[AVERTISMENT] Datele SMTP nu sunt configurate. Emailul nu s-a trimis.")
         return
         
     try:
@@ -27,7 +25,6 @@ def send_email_alert(product_name: str, price: float, store: str, url: str):
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
         
-        # Continutul emailului in format HTML curat
         html_content = f"""
         <html>
           <body style="font-family: Arial, sans-serif; color: #333;">
@@ -39,16 +36,13 @@ def send_email_alert(product_name: str, price: float, store: str, url: str):
           </body>
         </html>
         """
-        
         msg.attach(MIMEText(html_content, "html"))
         
-        # Conectarea la serverul SMTP (ex: Gmail)
         with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls() # Securizam conexiunea
+            server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-            
-        print(f"[SUCCES] Alerta pe email a fost trimisa catre {RECEIVER_EMAIL}!")
+            print(f"[SUCCES] Alerta pe email a fost trimisa catre {RECEIVER_EMAIL}!")
     except Exception as e:
         print(f"[EROARE] Nu s-a putut trimite emailul: {e}")
 
@@ -62,13 +56,13 @@ def get_browser_context(playwright_instance):
 
 def add_product_auto(db):
     print("\n--- ADAUGARE PRODUS (CAUTARE AUTOMATA) ---")
-    name = input("Introdu numele exact al produsului (ex: Ryzen 7 7800X3D): ").strip()
+    name = input("Introdu numele exact al produsului (ex: Ryzen 5 7600X): ").strip()
     if not name:
         print("[EROARE] Numele nu poate fi gol.")
         return
         
     try:
-        target_price = float(input("Introdu pretul tinta in RON (ex: 1800): ").strip())
+        target_price = float(input("Introdu pretul tinta in RON (ex: 1000): ").strip())
     except ValueError:
         print("[EROARE] Pretul trebuie sa fie un numar valid.")
         return
@@ -175,7 +169,6 @@ def run_comparator(db):
                     diff = second["price"] - best["price"]
                     print(f"[ECONOMIE] Economisesti {diff:.2f} RON fata de {second['store']} ({second['price']:.2f} RON)")
                 
-                # Verificam pragul de alerta si trimitem email
                 if best["price"] <= product.target_price:
                     print(f"[ALERTA] Pretul ({best['price']:.2f} RON) este SUB tinta ta de {product.target_price} RON!")
                     send_email_alert(product.name, best["price"], best["store"], best["url"])
@@ -212,19 +205,28 @@ def delete_product(db):
     except ValueError:
         print("[EROARE] Introdu un numar valid.")
 
-def afiseaza_date(db):
-    produse = db.query(Product).all()
-    
-    for p in produse:
-        print(f"\n==========================================")
-        print(f"PRODUS: {p.name} | Pret Tinta: {p.target_price} RON")
-        print(f"==========================================")
-        for l in p.listings:
-            print(f"  Magazin: [{l.store_name}] -> {l.url}")
-            for h in l.history:
-                data_f = h.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                print(f"     * {h.price:.2f} RON ({data_f} UTC)")
+def view_database(db):
+    products = db.query(Product).all()
+    if not products:
+        print("\n[INFO] Baza de date este goala.")
+        return
+
+    print("\n================ CONTINUT BAZA DE DATE ================")
+    for p in products:
+        print(f"\n[PRODUS ID: {p.id}] {p.name}")
+        print(f"  -> Pret Tinta: {p.target_price} RON")
+        print(f"  -> Magazine monitorizate ({len(p.listings)}):")
         
+        for l in p.listings:
+            print(f"     * [{l.store_name}] URL: {l.url}")
+            if l.history:
+                print("       Istoric preturi:")
+                for h in l.history:
+                    data_f = h.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                    print(f"         - {h.price:.2f} RON (la {data_f} UTC)")
+            else:
+                print("       Istoric preturi: Niciun pret inregistrat inca.")
+    print("=======================================================")
 
 def main_menu():
     init_db()
@@ -240,7 +242,7 @@ def main_menu():
         print("0. Iesire")
         print("======================================================")
         
-        choice = input("Alege o optiune (0-4): ").strip()
+        choice = input("Alege o optiune (0-5): ").strip()
         
         if choice == "1":
             add_product_auto(db)
@@ -251,8 +253,7 @@ def main_menu():
         elif choice == "4":
             delete_product(db)
         elif choice == "5":
-            from view_db import afiseaza_date
-            afiseaza_date()
+            view_database(db)
         elif choice == "0":
             print("La revedere!")
             break

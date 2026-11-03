@@ -2,25 +2,22 @@ from playwright.sync_api import BrowserContext
 from urllib.parse import urlparse, quote_plus
 import re
 
-# Configuratia pentru extragerea pretului de pe pagina produsului
 STORE_SELECTORS = {
     "pcgarage.ro": ".price_num",
-    "vexio.ro": "#price-value",
+    "emag.ro": ".product-new-price",
     "altex.ro": ".Price-int",
     "mediagalaxy.ro": ".Price-int",
-    "flanco.ro": ".special-price .price",
-    "emag.ro": ".product-new-price"
+    "flanco.ro": ".special-price .price"
 }
 
-# Configuratia pentru cautarea automata (bara de search a fiecarui magazin)
 SEARCH_CONFIGS = {
     "PCGARAGE": {
         "search_url": "https://www.pcgarage.ro/cauta/{query}",
         "first_product_link": ".product_box_name a"
     },
-    "VEXIO": {
-        "search_url": "https://www.vexio.ro/?sn.q={query}",
-        "first_product_link": "h2.name a"
+    "EMAG": {
+        "search_url": "https://www.emag.ro/search/{query}",
+        "first_product_link": "a.card-v2-title"
     }
 }
 
@@ -56,7 +53,6 @@ def scrape_product_price(context: BrowserContext, url: str) -> float:
         page.close()
 
 def auto_find_product_url(context: BrowserContext, store_key: str, product_name: str) -> str | None:
-    """Cauta automat produsul pe magazin si returneaza URL-ul primului rezultat."""
     config = SEARCH_CONFIGS.get(store_key)
     if not config:
         return None
@@ -66,22 +62,26 @@ def auto_find_product_url(context: BrowserContext, store_key: str, product_name:
     page = context.new_page()
     
     try:
+        # Intram pe pagina de cautare
         page.goto(search_url, wait_until="domcontentloaded", timeout=20000)
         
-        # Daca magazinul ne redirectioneaza direct pe pagina produsului
-        if page.url != search_url and "/cauta/" not in page.url and "sn.q=" not in page.url:
+        # Daca magazinul ne-a redirectionat direct pe produs
+        if page.url != search_url and "/search/" not in page.url and "/cauta/" not in page.url:
             return page.url
             
-        # Altfel, asteptam lista de rezultate si luam primul produs
+        # Asteptam sa apara lista de rezultate
         page.wait_for_selector(config["first_product_link"], timeout=10000)
-        first_link = page.locator(config["first_product_link"]).first.get_attribute("href")
         
-        if first_link and first_link.startswith("/"):
-            parsed = urlparse(search_url)
-            first_link = f"{parsed.scheme}://{parsed.netloc}{first_link}"
-            
-        return first_link
-    except Exception:
+        # DAM CLICK pe primul rezultat
+        print(f"       [DEBUG] Accesam pagina primului produs de pe {store_key}...")
+        page.locator(config["first_product_link"]).first.click()
+        
+        # Asteptam sa se incarce pagina noului produs
+        page.wait_for_load_state("domcontentloaded", timeout=15000)
+        
+        return page.url
+    except Exception as e:
+        print(f"       [EROARE Cautare {store_key}]: {e}")
         return None
     finally:
         page.close()
