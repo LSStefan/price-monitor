@@ -1,3 +1,5 @@
 venv/
 .env
+clean_db.py
+prices.db
 __pycache__/
